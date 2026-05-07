@@ -1,0 +1,38 @@
+# Maven build
+target/
+*.class
+
+# IntelliJ IDEA
+.idea/
+*.iml
+out/
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# VS Code
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Minecraft server test files
+test-server*/
+server/
+logs/
+plugins/.paper-remapped/
+plugins/LeafGrapple/
+*.log
+eula.txt
+banned-ips.json
+banned-players.json
+ops.json
+usercache.json
+whitelist.json
+
+# Temporary files
+*.tmp
+*.bak

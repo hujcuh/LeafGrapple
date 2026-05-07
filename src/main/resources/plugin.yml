@@ -1,0 +1,21 @@
+name: LeafGrapple
+version: 1.0.0
+main: me.LeafPixel.leafgrapple.LeafGrapplePlugin
+api-version: '1.21'
+folia-supported: true
+
+author: LeafPixel
+description: A safe Paper/Folia grappling hook plugin.
+
+commands:
+  leafgrapple:
+    description: Main command of LeafGrapple.
+    usage: /leafgrapple
+    aliases:
+      - grapple
+      - lg
+
+permissions:
+  leafgrapple.admin:
+    description: Allows using admin commands of LeafGrapple.
+    default: op

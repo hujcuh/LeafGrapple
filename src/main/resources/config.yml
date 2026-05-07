@@ -1,0 +1,76 @@
+settings:
+  debug: true
+  recast-cooldown-ticks: 4
+  max-session-lifetime-ticks: 120
+  max-pull-ticks: 100
+  arrive-distance: 0.9
+  reduce-fall-damage: true
+
+sounds:
+  launch:
+    enabled: true
+    sound: "minecraft:entity.arrow.shoot"
+    volume: 0.8
+    pitch: 1.2
+
+  hook-block:
+    enabled: true
+    sound: "minecraft:block.chain.place"
+    volume: 1.0
+    pitch: 0.9
+
+  pulling:
+    enabled: true
+    sound: "minecraft:block.chain.hit"
+    volume: 0.65
+    pitch: 1.0
+    interval-ticks: 3
+
+  finish:
+    enabled: true
+    sound: "minecraft:block.chain.break"
+    volume: 0.7
+    pitch: 1.1
+
+hooks:
+  wood:
+    display-name: "Wood Grapple"
+
+    # 手持物品材质
+    item-material: PAPER
+    item-model: "leafgrapple:wood_grapple"
+
+    # 飞出去的钩头显示
+    display-item-material: PAPER
+    display-item-model: "leafgrapple:wood_grapple_head"
+
+    max-distance: 16.0
+    launch-speed: 1.2
+    pull-acceleration: 0.05
+    max-pull-speed: 0.85
+    cooldown-ticks: 20
+
+    durability:
+      enabled: true       # 是否启用耐久
+      max: 10            # 最大耐久
+      cost-on-finish: 1   # 成功拉回完成后扣多少耐久
+      
+    display:
+      glowing: true
+
+      # ItemDisplay 缩放
+      scale-x: 0.35
+      scale-y: 0.35
+      scale-z: 0.35
+
+      # ItemDisplay 本地偏移
+      offset-x: 0.0
+      offset-y: -0.1
+      offset-z: 0.0
+
+      # 简单轴角旋转
+      # angle 是角度制，不是弧度
+      rotation-axis-x: 0.0
+      rotation-axis-y: 1.0
+      rotation-axis-z: 0.0
+      rotation-angle-degrees: 0.0
