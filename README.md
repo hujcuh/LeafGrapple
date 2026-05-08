@@ -1,6 +1,7 @@
 ## English Version
 
-### plugin designed for Paper / Folia 1.21.4+.### Introduction
+### plugin designed for Paper / Folia 1.21.4+
+### Introduction
 
 LeafGrapple is suitable for servers that need custom grapple items, modern item models, configurable movement parameters, improved grapple pulling physics, entity binding, durability, cooldowns, visible hook-chain effects, and ItemsAdder Modern graphics support.
 
