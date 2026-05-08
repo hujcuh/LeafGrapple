@@ -1,10 +1,67 @@
 settings:
   debug: true
+
   recast-cooldown-ticks: 4
+
+  # 钩爪飞行最大存在时间。
   max-session-lifetime-ticks: 120
+
+  # 玩家被拉扯的最大 tick 数。
   max-pull-ticks: 100
+
+  # 到达判定距离。
   arrive-distance: 0.9
+
+  # 拉扯过程中减少摔落伤害。
   reduce-fall-damage: true
+
+  # ==============================
+  # 拉扯手感优化
+  # ==============================
+
+  # 钩中方块后，实际拉扯目标点会优先修正到命中方块上方。
+  # 这个值代表相对方块底部的 Y 偏移。
+  # 1.15 约等于方块上表面再抬高一点。
+  pull-target-y-offset: 1.15
+
+  # 如果无法找到合适方块上表面落点，则使用命中点上抬多少。
+  pull-fallback-y-offset: 0.85
+
+  # 抛物线上抬强度。
+  # 值越大，中段越容易向上扬。
+  pull-arc-strength: 0.18
+
+  # 低处拉向高处时的上升辅助倍率。
+  # 例如目标比玩家高 3 格，则额外上升辅助约为 3 * 0.08。
+  pull-upward-assist: 0.08
+
+  # 低打高时额外上升辅助的最大值。
+  pull-max-extra-upward: 0.28
+
+  # 接近目标点多少格内开始收敛上抬。
+  pull-near-target-distance: 3.0
+
+  # 拉扯时 Y 轴速度上限。
+  pull-max-y-velocity: 0.95
+
+  # 拉扯时 Y 轴速度下限。
+  pull-min-y-velocity: -0.8
+
+  # 是否启用一格边缘越障辅助。
+  # 用于解决低处拉向一格高方块时卡在边缘的问题。
+  pull-step-assist-enabled: true
+
+  # 一格边缘越障辅助的最低 Y 速度。
+  pull-step-assist-velocity: 0.42
+
+  # 到达终点时是否轻微上弹。
+  finish-hop-enabled: true
+
+  # 到达终点时的上弹速度。
+  finish-hop-velocity: 0.32
+
+  # 到达终点时保留多少水平惯性。
+  finish-horizontal-multiplier: 0.55
 
 sounds:
   launch:

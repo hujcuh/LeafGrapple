@@ -21,7 +21,32 @@ public final class GrappleSession {
     private boolean hooked;
     private boolean pulling;
 
+    /**
+     * 钩爪真实命中点，一般是 rayTraceBlocks 返回的 hitPosition。
+     */
     private Location anchor;
+
+    /**
+     * 钩爪命中的方块位置。
+     *
+     * 这个字段用于解决玩家被拉向方块侧面导致卡边的问题。
+     * 如果只用 anchor.getBlock()，在命中方块边界时可能取到相邻空气方块。
+     */
+    private Location anchorBlockLocation;
+
+    /**
+     * 实际拉扯目标点。
+     *
+     * 它不一定等于 anchor。
+     * 例如钩中方块侧面时，pullTarget 会被修正到方块上表面附近。
+     */
+    private Location pullTarget;
+
+    /**
+     * 开始拉扯时，玩家到 pullTarget 的初始距离。
+     * 用于计算拉扯进度和抛物线强度。
+     */
+    private double initialPullDistance;
 
     private int flyTicks;
     private int pullTicks;
@@ -99,6 +124,30 @@ public final class GrappleSession {
 
     public void setAnchor(Location anchor) {
         this.anchor = anchor;
+    }
+
+    public Location anchorBlockLocation() {
+        return anchorBlockLocation;
+    }
+
+    public void setAnchorBlockLocation(Location anchorBlockLocation) {
+        this.anchorBlockLocation = anchorBlockLocation;
+    }
+
+    public Location pullTarget() {
+        return pullTarget;
+    }
+
+    public void setPullTarget(Location pullTarget) {
+        this.pullTarget = pullTarget;
+    }
+
+    public double initialPullDistance() {
+        return initialPullDistance;
+    }
+
+    public void setInitialPullDistance(double initialPullDistance) {
+        this.initialPullDistance = initialPullDistance;
     }
 
     public int flyTicks() {

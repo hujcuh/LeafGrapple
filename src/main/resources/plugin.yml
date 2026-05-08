@@ -1,5 +1,5 @@
 name: LeafGrapple
-version: 1.0.0
+version: 1.0.1
 main: me.LeafPixel.leafgrapple.LeafGrapplePlugin
 api-version: '1.21'
 folia-supported: true
