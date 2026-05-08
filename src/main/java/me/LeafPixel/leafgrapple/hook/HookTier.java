@@ -3,6 +3,7 @@ package me.LeafPixel.leafgrapple.hook;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.configuration.ConfigurationSection;
+import me.LeafPixel.leafgrapple.entityhook.EntityHookSettings;
 
 import java.util.Locale;
 
@@ -20,6 +21,7 @@ public final class HookTier {
     private final NamespacedKey displayItemModel;
 
     private final double maxDistance;
+    private final double maxPullDistance;
     private final double launchSpeed;
     private final double pullAcceleration;
     private final double maxPullSpeed;
@@ -29,20 +31,21 @@ public final class HookTier {
     private final int maxDurability;
     private final int durabilityCostOnFinish;
 
-    private final boolean displayGlowing;
+    private final boolean showTechnicalLore;
+    private final EntityHookSettings entityHookSettings;
 
+    private final boolean displayGlowing;
     private final float displayScaleX;
     private final float displayScaleY;
     private final float displayScaleZ;
-
     private final float displayOffsetX;
     private final float displayOffsetY;
     private final float displayOffsetZ;
-
     private final float displayRotationAxisX;
     private final float displayRotationAxisY;
     private final float displayRotationAxisZ;
     private final float displayRotationAngleDegrees;
+    
 
     public HookTier(
             String id,
@@ -54,6 +57,7 @@ public final class HookTier {
             int displayCustomModelData,
             NamespacedKey displayItemModel,
             double maxDistance,
+            double maxPullDistance,
             double launchSpeed,
             double pullAcceleration,
             double maxPullSpeed,
@@ -61,6 +65,8 @@ public final class HookTier {
             boolean durabilityEnabled,
             int maxDurability,
             int durabilityCostOnFinish,
+            boolean showTechnicalLore,
+            EntityHookSettings entityHookSettings,
             boolean displayGlowing,
             float displayScaleX,
             float displayScaleY,
@@ -82,6 +88,7 @@ public final class HookTier {
         this.displayCustomModelData = displayCustomModelData;
         this.displayItemModel = displayItemModel;
         this.maxDistance = maxDistance;
+        this.maxPullDistance = maxPullDistance;
         this.launchSpeed = launchSpeed;
         this.pullAcceleration = pullAcceleration;
         this.maxPullSpeed = maxPullSpeed;
@@ -89,6 +96,8 @@ public final class HookTier {
         this.durabilityEnabled = durabilityEnabled;
         this.maxDurability = maxDurability;
         this.durabilityCostOnFinish = durabilityCostOnFinish;
+        this.showTechnicalLore = showTechnicalLore;
+        this.entityHookSettings = entityHookSettings;
         this.displayGlowing = displayGlowing;
         this.displayScaleX = displayScaleX;
         this.displayScaleY = displayScaleY;
@@ -116,11 +125,12 @@ public final class HookTier {
          * 是否启用 ItemsAdder Modern 自动兼容。
          *
          * true:
-         *   leafgrapple:wood_grapple
-         *   -> leafgrapple:ia_auto/wood_grapple
+         * leafgrapple:wood_grapple
+         * ->
+         * leafgrapple:ia_auto/wood_grapple
          *
          * false:
-         *   保持原样，适合纯资源包或其他插件。
+         * 保持原样，适合纯资源包或其他插件。
          */
         boolean itemsAdderModernAutoModel = section.getBoolean("itemsadder-modern-auto-model", true);
 
@@ -145,6 +155,22 @@ public final class HookTier {
             displayItemModel = itemModel;
         }
 
+        double maxDistance = section.getDouble("max-distance", 16.0);
+
+        /*
+         * 新增：
+         * 玩家右键拉回时，玩家与拉扯目标点之间允许的最大距离。
+         * 默认等于 max-distance。
+         * <= 0 表示不限制。
+         */
+        double maxPullDistance = section.getDouble("max-pull-distance", maxDistance);
+
+
+        EntityHookSettings entityHookSettings = EntityHookSettings.fromConfig(
+                section.getConfigurationSection("entity-hook"),
+                maxDistance
+        );
+
         ConfigurationSection durabilitySection = section.getConfigurationSection("durability");
 
         boolean durabilityEnabled = durabilitySection != null
@@ -158,9 +184,22 @@ public final class HookTier {
                 ? 0
                 : durabilitySection.getInt("cost-on-finish", 1);
 
+        ConfigurationSection loreSection = section.getConfigurationSection("lore");
+
+        /*
+         * 新增：
+         * 是否显示技术类 lore。
+         *
+         * false 时隐藏：
+         * 类型、材质、物品模型、钩头材质、钩头模型。
+         */
+        boolean showTechnicalLore = loreSection != null
+                && loreSection.getBoolean("show-technical-info", false);
+
         ConfigurationSection displaySection = section.getConfigurationSection("display");
 
-        boolean glowing = displaySection == null || displaySection.getBoolean("glowing", true);
+        boolean glowing = displaySection == null
+                || displaySection.getBoolean("glowing", true);
 
         float scaleX = getFloat(displaySection, "scale-x", 0.35F);
         float scaleY = getFloat(displaySection, "scale-y", 0.35F);
@@ -184,7 +223,8 @@ public final class HookTier {
                 displayMaterial,
                 displayCustomModelData,
                 displayItemModel,
-                section.getDouble("max-distance", 16.0),
+                maxDistance,
+                maxPullDistance,
                 section.getDouble("launch-speed", 1.2),
                 section.getDouble("pull-acceleration", 0.05),
                 section.getDouble("max-pull-speed", 0.85),
@@ -192,6 +232,8 @@ public final class HookTier {
                 durabilityEnabled,
                 maxDurability,
                 durabilityCostOnFinish,
+                showTechnicalLore,
+                entityHookSettings,
                 glowing,
                 scaleX,
                 scaleY,
@@ -329,6 +371,10 @@ public final class HookTier {
         return maxDistance;
     }
 
+    public double maxPullDistance() {
+        return maxPullDistance;
+    }
+
     public double launchSpeed() {
         return launchSpeed;
     }
@@ -355,6 +401,10 @@ public final class HookTier {
 
     public int durabilityCostOnFinish() {
         return durabilityCostOnFinish;
+    }
+
+    public boolean showTechnicalLore() {
+        return showTechnicalLore;
     }
 
     public boolean displayGlowing() {
@@ -399,5 +449,9 @@ public final class HookTier {
 
     public float displayRotationAngleDegrees() {
         return displayRotationAngleDegrees;
+    }
+
+    public EntityHookSettings entityHookSettings() {
+        return entityHookSettings;
     }
 }

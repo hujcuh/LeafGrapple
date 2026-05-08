@@ -1,5 +1,6 @@
 package me.LeafPixel.leafgrapple.command;
 
+import me.LeafPixel.leafgrapple.LeafGrapplePlugin;
 import me.LeafPixel.leafgrapple.hook.HookItemService;
 import me.LeafPixel.leafgrapple.hook.HookTier;
 import net.kyori.adventure.text.Component;
@@ -13,7 +14,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -34,31 +34,42 @@ public final class LeafGrappleCommand implements CommandExecutor, TabCompleter {
             @NotNull String[] args
     ) {
         if (args.length == 0) {
-            sender.sendMessage(Component.text("用法: /" + label + " give <wood|iron|gold|netherite>"));
+            sendHelp(sender, label);
             return true;
         }
 
-        if (args[0].equalsIgnoreCase("give")) {
+        String subCommand = args[0].toLowerCase(Locale.ROOT);
+
+        if (subCommand.equals("give")) {
             handleGive(sender, label, args);
             return true;
         }
 
-        if (args[0].equalsIgnoreCase("list")) {
+        if (subCommand.equals("list")) {
             handleList(sender);
             return true;
         }
 
-        sender.sendMessage(Component.text("未知子命令。用法: /" + label + " give <wood|iron|gold|netherite>"));
+        if (subCommand.equals("reload")) {
+            handleReload(sender);
+            return true;
+        }
+
+        if (subCommand.equals("help")) {
+            sendHelp(sender, label);
+            return true;
+        }
+
+        sender.sendMessage(Component.text("未知子命令。"));
+        sendHelp(sender, label);
         return true;
     }
 
     private void handleGive(CommandSender sender, String label, String[] args) {
-        if (!(sender instanceof Player)) {
+        if (!(sender instanceof Player player)) {
             sender.sendMessage(Component.text("这个命令只能由玩家执行。"));
             return;
         }
-
-        Player player = (Player) sender;
 
         if (!player.hasPermission("leafgrapple.admin")) {
             player.sendMessage(Component.text("你没有权限使用这个命令。"));
@@ -66,7 +77,8 @@ public final class LeafGrappleCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length < 2) {
-            player.sendMessage(Component.text("用法: /" + label + " give <wood|iron|gold|netherite>"));
+            player.sendMessage(Component.text("用法: /" + label + " give <类型>"));
+            sendAvailableTypes(player);
             return;
         }
 
@@ -75,6 +87,7 @@ public final class LeafGrappleCommand implements CommandExecutor, TabCompleter {
 
         if (tier == null) {
             player.sendMessage(Component.text("不存在的钩爪类型: " + tierId));
+            sendAvailableTypes(player);
             return;
         }
 
@@ -92,6 +105,50 @@ public final class LeafGrappleCommand implements CommandExecutor, TabCompleter {
         }
     }
 
+    private void handleReload(CommandSender sender) {
+        if (!sender.hasPermission("leafgrapple.admin")) {
+            sender.sendMessage(Component.text("你没有权限使用这个命令。"));
+            return;
+        }
+
+        LeafGrapplePlugin plugin = LeafGrapplePlugin.getInstance();
+
+        if (plugin == null) {
+            sender.sendMessage(Component.text("LeafGrapple 实例不可用，无法重载。"));
+            return;
+        }
+
+        plugin.reloadPlugin();
+
+        int loaded = hookItemService.getTiers().size();
+
+        sender.sendMessage(Component.text("LeafGrapple 配置已重载。"));
+        sender.sendMessage(Component.text("已加载钩爪类型数量: " + loaded));
+    }
+
+    private void sendHelp(CommandSender sender, String label) {
+        sender.sendMessage(Component.text("LeafGrapple 命令:"));
+        sender.sendMessage(Component.text("/" + label + " give <类型> - 获取钩爪"));
+        sender.sendMessage(Component.text("/" + label + " list - 查看钩爪类型"));
+        sender.sendMessage(Component.text("/" + label + " reload - 重载配置"));
+        sender.sendMessage(Component.text("/" + label + " help - 查看帮助"));
+    }
+
+    private void sendAvailableTypes(CommandSender sender) {
+        List<String> ids = new ArrayList<>();
+
+        for (HookTier tier : hookItemService.getTiers()) {
+            ids.add(tier.id());
+        }
+
+        if (ids.isEmpty()) {
+            sender.sendMessage(Component.text("当前没有可用钩爪类型。"));
+            return;
+        }
+
+        sender.sendMessage(Component.text("可用类型: " + String.join(", ", ids)));
+    }
+
     @Override
     public @Nullable List<String> onTabComplete(
             @NotNull CommandSender sender,
@@ -100,10 +157,24 @@ public final class LeafGrappleCommand implements CommandExecutor, TabCompleter {
             @NotNull String[] args
     ) {
         if (args.length == 1) {
-            return filter(Arrays.asList("give", "list"), args[0]);
+            List<String> subCommands = new ArrayList<>();
+
+            subCommands.add("give");
+            subCommands.add("list");
+            subCommands.add("help");
+
+            if (sender.hasPermission("leafgrapple.admin")) {
+                subCommands.add("reload");
+            }
+
+            return filter(subCommands, args[0]);
         }
 
         if (args.length == 2 && args[0].equalsIgnoreCase("give")) {
+            if (!sender.hasPermission("leafgrapple.admin")) {
+                return Collections.emptyList();
+            }
+
             List<String> ids = new ArrayList<>();
 
             for (HookTier tier : hookItemService.getTiers()) {

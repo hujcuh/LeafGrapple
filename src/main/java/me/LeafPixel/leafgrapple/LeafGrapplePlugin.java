@@ -1,6 +1,7 @@
 package me.LeafPixel.leafgrapple;
 
 import me.LeafPixel.leafgrapple.command.LeafGrappleCommand;
+import me.LeafPixel.leafgrapple.entityhook.EntityHookService;
 import me.LeafPixel.leafgrapple.hook.HookItemService;
 import me.LeafPixel.leafgrapple.hook.HookKeys;
 import me.LeafPixel.leafgrapple.listener.PlayerQuitListener;
@@ -19,6 +20,7 @@ public final class LeafGrapplePlugin extends JavaPlugin {
     private HookItemService hookItemService;
     private GrappleService grappleService;
     private CooldownService cooldownService;
+    private EntityHookService entityHookService;
 
     public static LeafGrapplePlugin getInstance() {
         return instance;
@@ -36,6 +38,10 @@ public final class LeafGrapplePlugin extends JavaPlugin {
         return cooldownService;
     }
 
+    public EntityHookService entityHookService() {
+        return entityHookService;
+    }
+
     @Override
     public void onEnable() {
         instance = this;
@@ -43,11 +49,24 @@ public final class LeafGrapplePlugin extends JavaPlugin {
         saveDefaultConfig();
 
         this.hookKeys = new HookKeys(this);
+
         this.hookItemService = new HookItemService(this, hookKeys);
         this.hookItemService.loadFromConfig();
 
         this.cooldownService = new CooldownService();
-        this.grappleService = new GrappleService(this, cooldownService, hookItemService);
+
+        this.entityHookService = new EntityHookService(
+                this,
+                hookItemService,
+                cooldownService
+        );
+
+        this.grappleService = new GrappleService(
+                this,
+                cooldownService,
+                hookItemService,
+                entityHookService
+        );
 
         registerCommands();
         registerListeners();
@@ -62,11 +81,44 @@ public final class LeafGrapplePlugin extends JavaPlugin {
             grappleService.clearAll();
         }
 
+        if (entityHookService != null) {
+            entityHookService.clearAll();
+        }
+
         if (cooldownService != null) {
             cooldownService.clearAll();
         }
 
         getLogger().info("LeafGrapple disabled.");
+    }
+
+    /**
+     * Reload LeafGrapple configuration safely.
+     *
+     * This will:
+     * - clear active grapple sessions
+     * - clear active entity hook sessions
+     * - reload config.yml
+     * - reload hook tiers
+     *
+     * It does not clear cooldowns by default.
+     */
+    public void reloadPlugin() {
+        if (grappleService != null) {
+            grappleService.clearAll();
+        }
+
+        if (entityHookService != null) {
+            entityHookService.clearAll();
+        }
+
+        reloadConfig();
+
+        if (hookItemService != null) {
+            hookItemService.loadFromConfig();
+        }
+
+        getLogger().info("LeafGrapple configuration reloaded.");
     }
 
     private void registerCommands() {
@@ -91,7 +143,7 @@ public final class LeafGrapplePlugin extends JavaPlugin {
         );
 
         pluginManager.registerEvents(
-                new PlayerQuitListener(grappleService, cooldownService),
+                new PlayerQuitListener(grappleService, cooldownService, entityHookService),
                 this
         );
     }

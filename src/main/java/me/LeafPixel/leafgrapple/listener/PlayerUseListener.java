@@ -36,96 +36,104 @@ public final class PlayerUseListener implements Listener {
         this.cooldownService = cooldownService;
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
+    @EventHandler(priority = EventPriority.HIGHEST)
     public void onUse(PlayerInteractEvent event) {
-        if (event.getHand() != EquipmentSlot.HAND) {
+        EquipmentSlot hand = event.getHand();
+
+        if (hand == null) {
             return;
         }
 
-        Action action = event.getAction();
         Player player = event.getPlayer();
+        Action action = event.getAction();
 
-        ItemStack item = player.getInventory().getItemInMainHand();
+        ItemStack item = getItemInUsedHand(player, hand);
         HookTier tier = hookItemService.getHookTier(item);
 
         if (tier == null) {
             return;
         }
 
+        /*
+         * 只要当前触发手拿的是钩爪，就阻止原版交互。
+         * 这可以避免右键方块时开门、放置、触发其他行为。
+         */
         event.setUseItemInHand(Event.Result.DENY);
         event.setUseInteractedBlock(Event.Result.DENY);
+        event.setCancelled(true);
+
+        if (isLeftClick(action)) {
+            handleLeftClick(player);
+            return;
+        }
+
+        if (isRightClick(action)) {
+            handleRightClick(player, tier);
+        }
+    }
+
+    private void handleLeftClick(Player player) {
+        if (!grappleService.hasSession(player)) {
+            return;
+        }
+
+        grappleService.cancelByPlayerSafely(player);
+    }
+
+    private void handleRightClick(Player player, HookTier tier) {
+        /*
+         * recast 防抖。
+         * 避免某些客户端/主副手/交互情况下短时间重复触发。
+         */
+        if (cooldownService.isCoolingDown(player.getUniqueId(), "recast")) {
+            return;
+        }
+
+        int recastCooldownTicks = plugin.getConfig().getInt("settings.recast-cooldown-ticks", 4);
+        cooldownService.start(player.getUniqueId(), "recast", recastCooldownTicks);
 
         GrappleSession session = grappleService.getSession(player);
 
         /*
-         * 左键取消。
+         * 已有会话时：
+         * - 如果钩住了，右键开始拉回。
+         * - 如果正在飞行或正在拉回，忽略。
          */
-        if (action == Action.LEFT_CLICK_AIR || action == Action.LEFT_CLICK_BLOCK) {
-            event.setCancelled(true);
-
-            if (session != null) {
-                grappleService.cancelByPlayer(player);
+        if (session != null) {
+            if (session.hooked() && !session.pulling()) {
+                grappleService.startPullSafely(player, session.anchor());
             }
 
             return;
         }
 
         /*
-         * 非右键不处理。
+         * 没有会话时，检查发射冷却。
          */
-        if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK) {
+        if (cooldownService.isCoolingDown(player.getUniqueId(), "launch")) {
+            int remainingTicks = cooldownService.getRemainingTicks(player.getUniqueId(), "launch");
+            player.sendActionBar(Component.text("钩爪冷却中: " + remainingTicks + " ticks"));
             return;
         }
 
-        event.setCancelled(true);
+        grappleService.fireSafely(player, tier);
+    }
 
-        /*
-         * IDLE -> FLYING
-         */
-        if (session == null) {
-            if (cooldownService.isCoolingDown(player.getUniqueId(), "launch")) {
-                int remainingTicks = cooldownService.getRemainingTicks(player.getUniqueId(), "launch");
-                player.sendActionBar(Component.text("钩爪冷却中: " + remainingTicks + " ticks"));
-                return;
-            }
-
-            grappleService.fire(player, tier);
-            return;
+    private ItemStack getItemInUsedHand(Player player, EquipmentSlot hand) {
+        if (hand == EquipmentSlot.OFF_HAND) {
+            return player.getInventory().getItemInOffHand();
         }
 
-        /*
-         * HOOKED -> PULLING
-         */
-        if (session.hooked() && !session.pulling()) {
-            if (session.anchor() == null) {
-                grappleService.clearSession(player.getUniqueId());
-                return;
-            }
+        return player.getInventory().getItemInMainHand();
+    }
 
-            grappleService.startPull(player, session.anchor());
-            return;
-        }
+    private boolean isRightClick(Action action) {
+        return action == Action.RIGHT_CLICK_AIR
+                || action == Action.RIGHT_CLICK_BLOCK;
+    }
 
-        /*
-         * FLYING -> 重新发射。
-         */
-        if (!session.pulling() && !session.hooked()) {
-            int recastCooldownTicks = plugin.getConfig().getInt("settings.recast-cooldown-ticks", 5);
-
-            if (cooldownService.isCoolingDown(player.getUniqueId(), "recast")) {
-                int remainingTicks = cooldownService.getRemainingTicks(player.getUniqueId(), "recast");
-                player.sendActionBar(Component.text("重新发射冷却中: " + remainingTicks + " ticks"));
-                return;
-            }
-
-            cooldownService.start(player.getUniqueId(), "recast", recastCooldownTicks);
-
-            if (recastCooldownTicks > 0) {
-                hookItemService.applyHookCooldown(player, tier, recastCooldownTicks);
-            }
-
-            grappleService.fire(player, tier);
-            player.sendActionBar(Component.text("重新发射钩爪"));
-        }
+    private boolean isLeftClick(Action action) {
+        return action == Action.LEFT_CLICK_AIR
+                || action == Action.LEFT_CLICK_BLOCK;
     }
 }

@@ -25,6 +25,9 @@ import org.bukkit.util.Transformation;
 import org.bukkit.util.Vector;
 import org.joml.AxisAngle4f;
 import org.joml.Vector3f;
+import me.LeafPixel.leafgrapple.entityhook.EntityHookService;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
 
 import java.util.Locale;
 import java.util.Map;
@@ -36,12 +39,20 @@ public final class GrappleService {
     private final Plugin plugin;
     private final CooldownService cooldownService;
     private final HookItemService hookItemService;
+    private final EntityHookService entityHookService;
+
     private final Map<UUID, GrappleSession> sessions = new ConcurrentHashMap<>();
 
-    public GrappleService(Plugin plugin, CooldownService cooldownService, HookItemService hookItemService) {
+    public GrappleService(
+            Plugin plugin,
+            CooldownService cooldownService,
+            HookItemService hookItemService,
+            EntityHookService entityHookService
+    ) {
         this.plugin = plugin;
         this.cooldownService = cooldownService;
         this.hookItemService = hookItemService;
+        this.entityHookService = entityHookService;
     }
 
     public GrappleSession getSession(Player player) {
@@ -52,6 +63,67 @@ public final class GrappleService {
         return sessions.containsKey(player.getUniqueId());
     }
 
+    /*
+     * Folia 安全入口：
+     *
+     * 外部入口，例如命令、API、其他插件回调、未来可能的异步逻辑，
+     * 推荐调用 fireSafely，而不是直接调用 fire。
+     *
+     * 这样可以保证真正的 fire 逻辑在玩家实体调度器中执行。
+     */
+    public void fireSafely(Player player, HookTier tier) {
+        if (player == null || tier == null) {
+            return;
+        }
+
+        player.getScheduler().execute(
+                plugin,
+                () -> fire(player, tier),
+                null,
+                1L
+        );
+    }
+
+    /*
+     * Folia 安全入口：
+     *
+     * 外部如果需要触发拉回，推荐调用这个方法。
+     * PlayerInteractEvent 内部调用 startPull 通常没问题，
+     * 但为了统一入口，也可以在 Listener 里调用 startPullSafely。
+     */
+    public void startPullSafely(Player player, Location anchor) {
+        if (player == null) {
+            return;
+        }
+
+        Location safeAnchor = anchor == null ? null : anchor.clone();
+
+        player.getScheduler().execute(
+                plugin,
+                () -> startPull(player, safeAnchor),
+                null,
+                1L
+        );
+    }
+
+    /*
+     * Folia 安全入口：
+     *
+     * 外部如果需要取消玩家钩爪，推荐调用这个方法。
+     */
+    public void cancelByPlayerSafely(Player player) {
+        if (player == null) {
+            return;
+        }
+
+        player.getScheduler().execute(
+                plugin,
+                () -> cancelByPlayer(player),
+                null,
+                1L
+        );
+    }
+
     public void fire(Player player, HookTier tier) {
         clearSession(player.getUniqueId());
 
@@ -59,10 +131,10 @@ public final class GrappleService {
         Vector direction = start.getDirection().normalize();
 
         GrappleSession session = new GrappleSession(
-            player.getUniqueId(),
-            tier,
-            start,
-            direction
+                player.getUniqueId(),
+                tier,
+                start,
+                direction
         );
 
         ItemDisplay display = spawnHookDisplay(player, start, tier);
@@ -71,11 +143,11 @@ public final class GrappleService {
         sessions.put(player.getUniqueId(), session);
 
         ScheduledTask task = player.getScheduler().runAtFixedRate(
-            plugin,
-            scheduledTask -> tickFlight(player, scheduledTask),
-            () -> clearSession(player.getUniqueId()),
-            1L,
-            1L
+                plugin,
+                scheduledTask -> tickFlight(player, scheduledTask),
+                () -> clearSession(player.getUniqueId()),
+                1L,
+                1L
         );
 
         session.setFlightTask(task);
@@ -86,6 +158,7 @@ public final class GrappleService {
 
     private void tickFlight(Player player, ScheduledTask task) {
         GrappleSession session = getSession(player);
+
         if (session == null) {
             task.cancel();
             return;
@@ -124,27 +197,64 @@ public final class GrappleService {
 
         HookTier tier = session.tier();
         double step = Math.max(0.2, tier.launchSpeed());
+
         World world = current.getWorld();
 
-        RayTraceResult result = world.rayTraceBlocks(
-            current,
-            direction,
-            step,
-            FluidCollisionMode.NEVER,
-            true
+        RayTraceResult blockResult = world.rayTraceBlocks(
+                current,
+                direction,
+                step,
+                FluidCollisionMode.NEVER,
+                true
         );
 
-        if (result != null && result.getHitBlock() != null && result.getHitPosition() != null) {
-            Location anchor = result.getHitPosition().toLocation(world);
-            Location anchorBlockLocation = result.getHitBlock().getLocation();
+        RayTraceResult entityResult = null;
+
+        if (
+                tier.entityHookSettings() != null
+                        && tier.entityHookSettings().enabled()
+                        && entityHookService != null
+        ) {
+            entityResult = world.rayTraceEntities(
+                    current,
+                    direction,
+                    step,
+                    0.35,
+                    entity -> isValidEntityHookRayTarget(player, tier, entity)
+            );
+        }
+
+        if (entityResult != null && entityResult.getHitEntity() instanceof LivingEntity target) {
+            boolean entityIsCloser = true;
+
+            if (blockResult != null && blockResult.getHitPosition() != null && entityResult.getHitPosition() != null) {
+                double entityDistanceSquared = entityResult.getHitPosition().distanceSquared(current.toVector());
+                double blockDistanceSquared = blockResult.getHitPosition().distanceSquared(current.toVector());
+                entityIsCloser = entityDistanceSquared <= blockDistanceSquared;
+            }
+
+            if (entityIsCloser) {
+                Location hitLocation = entityResult.getHitPosition() == null
+                        ? target.getLocation()
+                        : entityResult.getHitPosition().toLocation(world);
+
+                markEntityHooked(player, target, hitLocation);
+                task.cancel();
+                return;
+            }
+        }
+
+        if (blockResult != null && blockResult.getHitBlock() != null && blockResult.getHitPosition() != null) {
+            Location anchor = blockResult.getHitPosition().toLocation(world);
+            Location anchorBlockLocation = blockResult.getHitBlock().getLocation();
 
             markHooked(player, anchor, anchorBlockLocation);
-
             task.cancel();
             return;
         }
 
         Location next = current.clone().add(direction.clone().multiply(step));
+
         session.setTipLocation(next);
         session.addTravelled(step);
 
@@ -158,8 +268,22 @@ public final class GrappleService {
         }
     }
 
+    private boolean isValidEntityHookRayTarget(Player player, HookTier tier, Entity entity) {
+        if (!(entity instanceof LivingEntity livingEntity)) {
+            return false;
+        }
+
+        if (entity.getUniqueId().equals(player.getUniqueId())) {
+            return false;
+        }
+
+        return entityHookService != null
+                && entityHookService.canHookTarget(player, livingEntity, tier);
+    }
+
     private void markHooked(Player player, Location anchor, Location anchorBlockLocation) {
         GrappleSession session = getSession(player);
+
         if (session == null || session.hooked() || session.pulling()) {
             return;
         }
@@ -180,19 +304,81 @@ public final class GrappleService {
         debug(player, "[FLYING -> HOOKED] 钩爪已抓牢，右键拉回，左键取消");
     }
 
+    private void markEntityHooked(Player player, LivingEntity target, Location hitLocation) {
+        GrappleSession session = getSession(player);
+
+        if (session == null || session.pulling()) {
+            return;
+        }
+
+        ScheduledTask flightTask = session.flightTask();
+        if (flightTask != null) {
+            flightTask.cancel();
+            session.setFlightTask(null);
+        }
+
+        removeHookDisplay(session);
+
+        boolean started = entityHookService != null
+                && entityHookService.startHook(player, target, session.tier(), hitLocation);
+
+        clearSession(player.getUniqueId());
+
+        if (started) {
+            debug(player, "[FLYING -> ENTITY_HOOKED] 已束缚目标");
+        } else {
+            debug(player, "[FLYING -> IDLE] 目标无法被束缚");
+        }
+    }
+
     public void startPull(Player player, Location anchor) {
         GrappleSession session = getSession(player);
+
         if (session == null || session.pulling()) {
             return;
         }
 
         Location safeAnchor = anchor == null ? session.anchor() : anchor;
+
         if (safeAnchor == null) {
             clearSession(player.getUniqueId());
             return;
         }
 
         Location pullTarget = resolvePullTarget(player, session, safeAnchor);
+
+        if (pullTarget == null || pullTarget.getWorld() == null || !pullTarget.getWorld().equals(player.getWorld())) {
+            debug(player, "[HOOKED -> IDLE] 拉扯目标无效");
+            clearSession(player.getUniqueId());
+            return;
+        }
+
+        HookTier tier = session.tier();
+
+        /*
+         * 拉回最大距离限制。
+         *
+         * 检查玩家当前位置到最终 pullTarget 的距离。
+         * 防止玩家先发射钩爪，钩住方块后跑远，再右键超远距离拉回。
+         */
+        double maxPullDistance = tier.maxPullDistance();
+        if (maxPullDistance > 0.0) {
+            double currentDistance = player.getLocation().distance(pullTarget);
+
+            if (currentDistance > maxPullDistance) {
+                debug(player, "[HOOKED -> IDLE] 拉回距离过远");
+                player.sendActionBar(Component.text("距离钩点太远，无法拉回"));
+
+                clearSession(player.getUniqueId());
+                return;
+            }
+        }
+
+        /*
+         * 拉回操作一旦正式产生，立即扣耐久。
+         * 这样即使玩家拉回过程中左键取消，也不会绕过耐久消耗。
+         */
+        chargePullDurability(player, tier);
 
         session.setPulling(true);
         session.setHooked(false);
@@ -213,11 +399,11 @@ public final class GrappleService {
         debug(player, "[HOOKED -> PULLING] 开始拉回");
 
         ScheduledTask task = player.getScheduler().runAtFixedRate(
-            plugin,
-            scheduledTask -> tickPull(player, scheduledTask),
-            () -> clearSession(player.getUniqueId()),
-            1L,
-            1L
+                plugin,
+                scheduledTask -> tickPull(player, scheduledTask),
+                () -> clearSession(player.getUniqueId()),
+                1L,
+                1L
         );
 
         session.setPullTask(task);
@@ -225,6 +411,7 @@ public final class GrappleService {
 
     private void tickPull(Player player, ScheduledTask task) {
         GrappleSession session = getSession(player);
+
         if (session == null) {
             task.cancel();
             return;
@@ -237,6 +424,7 @@ public final class GrappleService {
         }
 
         Location anchor = session.anchor();
+
         if (anchor == null || anchor.getWorld() == null || !anchor.getWorld().equals(player.getWorld())) {
             debug(player, "[PULLING -> IDLE] 钩点无效");
             clearSession(player.getUniqueId());
@@ -258,10 +446,11 @@ public final class GrappleService {
         }
 
         Location pullTarget = session.pullTarget();
+
         if (
-            pullTarget == null
-                || pullTarget.getWorld() == null
-                || !pullTarget.getWorld().equals(player.getWorld())
+                pullTarget == null
+                        || pullTarget.getWorld() == null
+                        || !pullTarget.getWorld().equals(player.getWorld())
         ) {
             pullTarget = resolvePullTarget(player, session, anchor);
             session.setPullTarget(pullTarget);
@@ -279,10 +468,8 @@ public final class GrappleService {
         if (distance <= arriveDistance) {
             playConfiguredSound(player, "sounds.finish");
             debug(player, "[PULLING -> IDLE] 到达钩点");
-
             finishPlayerAfterPull(player);
             finishWithCooldown(player);
-
             task.cancel();
             return;
         }
@@ -290,23 +477,24 @@ public final class GrappleService {
         HookTier tier = session.tier();
 
         double nextSpeed = Math.min(
-            tier.maxPullSpeed(),
-            session.currentPullSpeed() + tier.pullAcceleration()
+                tier.maxPullSpeed(),
+                session.currentPullSpeed() + tier.pullAcceleration()
         );
 
         /*
          * 距离很近时降低速度，减少穿过目标点和过度甩飞。
          */
         nextSpeed = Math.min(nextSpeed, Math.max(0.12, distance * 0.35));
+
         session.setCurrentPullSpeed(nextSpeed);
 
         Vector velocity = computeArcPullVelocity(
-            player,
-            session,
-            pullTarget,
-            toTarget,
-            distance,
-            nextSpeed
+                player,
+                session,
+                pullTarget,
+                toTarget,
+                distance,
+                nextSpeed
         );
 
         player.setVelocity(velocity);
@@ -335,8 +523,10 @@ public final class GrappleService {
          * anchor.getBlock() 有概率取到相邻空气方块。
          */
         Location anchorBlockLocation = session.anchorBlockLocation();
+
         if (anchorBlockLocation != null && anchorBlockLocation.getWorld() != null) {
             Location blockTopCenter = anchorBlockLocation.clone().add(0.5, targetYOffset, 0.5);
+
             if (isSafeLandingSpace(blockTopCenter)) {
                 return blockTopCenter;
             }
@@ -375,17 +565,17 @@ public final class GrappleService {
         Block ground = feet.getRelative(BlockFace.DOWN);
 
         return ground.getType().isSolid()
-            && feet.isPassable()
-            && head.isPassable();
+                && feet.isPassable()
+                && head.isPassable();
     }
 
     private Vector computeArcPullVelocity(
-        Player player,
-        GrappleSession session,
-        Location target,
-        Vector toTarget,
-        double distance,
-        double speed
+            Player player,
+            GrappleSession session,
+            Location target,
+            Vector toTarget,
+            double distance,
+            double speed
     ) {
         Vector velocity = toTarget.clone().normalize().multiply(speed);
 
@@ -416,8 +606,6 @@ public final class GrappleService {
 
         /*
          * 接近目标点时收敛上抬，避免飞过头。
-         * 注意这里不再像旧逻辑那样强行把 Y 压到 0.25，
-         * 否则高处边缘会很容易拉不上去。
          */
         if (nearTargetDistance > 0.0 && distance < nearTargetDistance) {
             double nearFactor = distance / nearTargetDistance;
@@ -428,11 +616,10 @@ public final class GrappleService {
 
         /*
          * 一格边缘越障辅助。
-         * 只有当前方是实心方块，且上方空间可通过时才触发。
          */
         if (
-            plugin.getConfig().getBoolean("settings.pull-step-assist-enabled", true)
-                && shouldStepAssist(player, target)
+                plugin.getConfig().getBoolean("settings.pull-step-assist-enabled", true)
+                        && shouldStepAssist(player, target)
         ) {
             double stepAssistVelocity = plugin.getConfig().getDouble("settings.pull-step-assist-velocity", 0.42);
             velocity.setY(Math.max(velocity.getY(), stepAssistVelocity));
@@ -466,17 +653,34 @@ public final class GrappleService {
         Block aboveBlock = frontAbove.getBlock();
 
         return feetBlock.getType().isSolid()
-            && headBlock.isPassable()
-            && aboveBlock.isPassable();
+                && headBlock.isPassable()
+                && aboveBlock.isPassable();
     }
 
     public void cancelByPlayer(Player player) {
         debug(player, "[ANY -> IDLE] 玩家取消");
         clearSession(player.getUniqueId());
+
+        if (entityHookService != null) {
+            entityHookService.clearByOwner(player.getUniqueId());
+        }
+    }
+
+    private void chargePullDurability(Player player, HookTier tier) {
+        if (tier == null) {
+            return;
+        }
+
+        hookItemService.damageHookItem(
+                player,
+                tier,
+                tier.durabilityCostOnFinish()
+        );
     }
 
     public void finishWithCooldown(Player player) {
         GrappleSession session = getSession(player);
+
         if (session == null) {
             return;
         }
@@ -484,12 +688,6 @@ public final class GrappleService {
         HookTier tier = session.tier();
 
         clearSession(player.getUniqueId());
-
-        hookItemService.damageHookItem(
-            player,
-            tier,
-            tier.durabilityCostOnFinish()
-        );
 
         int cooldownTicks = tier.cooldownTicks();
         if (cooldownTicks > 0) {
@@ -500,6 +698,7 @@ public final class GrappleService {
 
     public void clearSession(UUID playerId) {
         GrappleSession session = sessions.remove(playerId);
+
         if (session == null) {
             return;
         }
@@ -521,7 +720,12 @@ public final class GrappleService {
         for (UUID playerId : sessions.keySet()) {
             clearSession(playerId);
         }
+
         sessions.clear();
+
+        if (entityHookService != null) {
+            entityHookService.clearAll();
+        }
     }
 
     private ItemDisplay spawnHookDisplay(Player player, Location location, HookTier tier) {
@@ -558,43 +762,44 @@ public final class GrappleService {
 
     private Transformation createDisplayTransformation(HookTier tier) {
         Vector3f translation = new Vector3f(
-            tier.displayOffsetX(),
-            tier.displayOffsetY(),
-            tier.displayOffsetZ()
+                tier.displayOffsetX(),
+                tier.displayOffsetY(),
+                tier.displayOffsetZ()
         );
 
         Vector3f scale = new Vector3f(
-            tier.displayScaleX(),
-            tier.displayScaleY(),
-            tier.displayScaleZ()
+                tier.displayScaleX(),
+                tier.displayScaleY(),
+                tier.displayScaleZ()
         );
 
         float angleRadians = (float) Math.toRadians(tier.displayRotationAngleDegrees());
 
         AxisAngle4f leftRotation = new AxisAngle4f(
-            angleRadians,
-            tier.displayRotationAxisX(),
-            tier.displayRotationAxisY(),
-            tier.displayRotationAxisZ()
+                angleRadians,
+                tier.displayRotationAxisX(),
+                tier.displayRotationAxisY(),
+                tier.displayRotationAxisZ()
         );
 
         AxisAngle4f rightRotation = new AxisAngle4f(
-            0.0F,
-            0.0F,
-            1.0F,
-            0.0F
+                0.0F,
+                0.0F,
+                1.0F,
+                0.0F
         );
 
         return new Transformation(
-            translation,
-            leftRotation,
-            scale,
-            rightRotation
+                translation,
+                leftRotation,
+                scale,
+                rightRotation
         );
     }
 
     private void updateHookDisplay(GrappleSession session, Location location) {
         ItemDisplay display = session.hookDisplay();
+
         if (display == null || !display.isValid()) {
             return;
         }
@@ -602,33 +807,34 @@ public final class GrappleService {
         Location target = location.clone();
 
         display.getScheduler().execute(
-            plugin,
-            () -> {
-                if (display.isValid()) {
-                    display.teleport(target);
-                }
-            },
-            null,
-            1L
+                plugin,
+                () -> {
+                    if (display.isValid()) {
+                        display.teleport(target);
+                    }
+                },
+                null,
+                1L
         );
     }
 
     private void removeHookDisplay(GrappleSession session) {
         ItemDisplay display = session.hookDisplay();
+
         if (display == null || !display.isValid()) {
             session.setHookDisplay(null);
             return;
         }
 
         display.getScheduler().execute(
-            plugin,
-            () -> {
-                if (display.isValid()) {
-                    display.remove();
-                }
-            },
-            null,
-            1L
+                plugin,
+                () -> {
+                    if (display.isValid()) {
+                        display.remove();
+                    }
+                },
+                null,
+                1L
         );
 
         session.setHookDisplay(null);
@@ -640,13 +846,13 @@ public final class GrappleService {
         }
 
         location.getWorld().spawnParticle(
-            Particle.CRIT,
-            location,
-            2,
-            0.02,
-            0.02,
-            0.02,
-            0.0
+                Particle.CRIT,
+                location,
+                2,
+                0.02,
+                0.02,
+                0.02,
+                0.0
         );
 
         if (plugin.getConfig().getBoolean("settings.debug", false) && player.getTicksLived() % 2 == 0) {
@@ -663,13 +869,13 @@ public final class GrappleService {
 
                     if (point.getWorld() != null) {
                         point.getWorld().spawnParticle(
-                            Particle.CRIT,
-                            point,
-                            1,
-                            0.0,
-                            0.0,
-                            0.0,
-                            0.0
+                                Particle.CRIT,
+                                point,
+                                1,
+                                0.0,
+                                0.0,
+                                0.0,
+                                0.0
                         );
                     }
                 }
@@ -679,6 +885,7 @@ public final class GrappleService {
 
     private void stopPlayerAfterPull(Player player) {
         Vector velocity = player.getVelocity();
+
         double x = velocity.getX() * 0.25;
         double z = velocity.getZ() * 0.25;
 
@@ -693,14 +900,15 @@ public final class GrappleService {
         Vector velocity = player.getVelocity();
 
         double horizontalMultiplier = plugin.getConfig().getDouble(
-            "settings.finish-horizontal-multiplier",
-            0.55
+                "settings.finish-horizontal-multiplier",
+                0.55
         );
 
         double x = velocity.getX() * horizontalMultiplier;
         double z = velocity.getZ() * horizontalMultiplier;
 
         double y = 0.0;
+
         if (plugin.getConfig().getBoolean("settings.finish-hop-enabled", true)) {
             y = plugin.getConfig().getDouble("settings.finish-hop-velocity", 0.32);
         }
@@ -736,6 +944,7 @@ public final class GrappleService {
         }
 
         String normalized = input.trim().toLowerCase(Locale.ROOT);
+
         NamespacedKey key = NamespacedKey.fromString(normalized);
 
         if (key == null && !normalized.contains(":")) {

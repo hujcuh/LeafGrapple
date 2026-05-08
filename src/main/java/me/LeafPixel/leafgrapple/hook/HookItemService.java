@@ -14,8 +14,10 @@ import org.bukkit.inventory.meta.components.UseCooldownComponent;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.Plugin;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -23,6 +25,7 @@ public final class HookItemService {
 
     private final Plugin plugin;
     private final HookKeys keys;
+
     private final Map<String, HookTier> tiers = new LinkedHashMap<>();
 
     public HookItemService(Plugin plugin, HookKeys keys) {
@@ -73,19 +76,7 @@ public final class HookItemService {
         }
 
         meta.displayName(Component.text(tier.displayName()));
-
-        meta.lore(java.util.List.of(
-                Component.text("类型: " + tier.id()),
-                Component.text("材质: " + tier.material().name()),
-                Component.text("物品模型: " + modelText(tier.itemModel())),
-                Component.text("钩头材质: " + tier.displayMaterial().name()),
-                Component.text("钩头模型: " + modelText(tier.displayItemModel())),
-                Component.text("最大距离: " + tier.maxDistance()),
-                Component.text("发射速度: " + tier.launchSpeed()),
-                Component.text("最大拉扯速度: " + tier.maxPullSpeed()),
-                Component.text("耐久: " + durabilityText(tier)),
-                Component.text("冷却: " + tier.cooldownTicks() + " ticks")
-        ));
+        meta.lore(createLore(tier));
 
         /*
          * 1.21.4+ Modern item_model.
@@ -134,9 +125,44 @@ public final class HookItemService {
         );
 
         meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
-        item.setItemMeta(meta);
 
+        item.setItemMeta(meta);
         return item;
+    }
+
+    private List<Component> createLore(HookTier tier) {
+        List<Component> lore = new ArrayList<>();
+
+        /*
+         * 技术信息默认隐藏。
+         * 如果需要调试或管理员物品显示完整信息，
+         * 可以在 config.yml 对应钩爪类型下设置：
+         *
+         * lore:
+         *   show-technical-info: true
+         */
+        if (tier.showTechnicalLore()) {
+            lore.add(Component.text("类型: " + tier.id()));
+            lore.add(Component.text("材质: " + tier.material().name()));
+            lore.add(Component.text("物品模型: " + modelText(tier.itemModel())));
+            lore.add(Component.text("钩头材质: " + tier.displayMaterial().name()));
+            lore.add(Component.text("钩头模型: " + modelText(tier.displayItemModel())));
+        }
+
+        lore.add(Component.text("最大距离: " + formatDouble(tier.maxDistance())));
+
+        if (tier.maxPullDistance() > 0.0) {
+            lore.add(Component.text("最大拉回距离: " + formatDouble(tier.maxPullDistance())));
+        } else {
+            lore.add(Component.text("最大拉回距离: 无限"));
+        }
+
+        lore.add(Component.text("发射速度: " + formatDouble(tier.launchSpeed())));
+        lore.add(Component.text("最大拉扯速度: " + formatDouble(tier.maxPullSpeed())));
+        lore.add(Component.text("耐久: " + durabilityText(tier)));
+        lore.add(Component.text("冷却: " + tier.cooldownTicks() + " ticks"));
+
+        return lore;
     }
 
     /**
@@ -290,7 +316,6 @@ public final class HookItemService {
          * 按 ItemStack 冷却，而不是按 Material 冷却。
          */
         player.setCooldown(item, cooldownTicks);
-
         return true;
     }
 
@@ -300,7 +325,6 @@ public final class HookItemService {
         }
 
         UseCooldownComponent cooldownComponent = meta.getUseCooldown();
-
         cooldownComponent.setCooldownGroup(getCooldownGroupKey(tier));
 
         /*
@@ -393,5 +417,13 @@ public final class HookItemService {
         }
 
         return String.valueOf(tier.maxDurability());
+    }
+
+    private String formatDouble(double value) {
+        if (value == Math.rint(value)) {
+            return String.valueOf((int) value);
+        }
+
+        return String.format(Locale.ROOT, "%.2f", value);
     }
 }

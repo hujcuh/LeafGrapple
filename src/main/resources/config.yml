@@ -1,5 +1,5 @@
 settings:
-  debug: true
+  debug: false
 
   recast-cooldown-ticks: 4
 
@@ -101,7 +101,13 @@ hooks:
     display-item-material: PAPER
     display-item-model: "leafgrapple:wood_grapple_head"
 
+    # 钩爪发射最大距离
     max-distance: 16.0
+
+    # 玩家右键拉回时，玩家与拉扯目标点之间允许的最大距离
+    # <= 0 表示不限制
+    max-pull-distance: 32.0
+
     launch-speed: 1.2
     pull-acceleration: 0.05
     max-pull-speed: 0.85
@@ -109,7 +115,7 @@ hooks:
 
     durability:
       enabled: true       # 是否启用耐久
-      max: 10            # 最大耐久
+      max: 32            # 最大耐久
       cost-on-finish: 1   # 成功拉回完成后扣多少耐久
       
     display:
@@ -131,3 +137,69 @@ hooks:
       rotation-axis-y: 1.0
       rotation-axis-z: 0.0
       rotation-angle-degrees: 0.0
+
+    lore:
+      show-technical-info: false
+
+    entity-hook:
+      enabled: true
+
+      target:
+        # 是否允许钩玩家，建议默认 false
+        players: false
+
+        # mobs=true 表示允许所有非玩家 LivingEntity
+        mobs: true
+
+        # 如果 mobs=false，可以用 animals/monsters 更细分
+        animals: true
+        monsters: true
+
+      pvp:
+        # 如果 players=true，是否要求世界 PVP 开启
+        require-world-pvp: true
+
+        # 拥有该权限的玩家不会被实体钩爪束缚
+        bypass-permission: "leafgrapple.entityhook.bypass"
+
+      # 束缚持续时间
+      duration-ticks: 40
+
+      # 实体命中最大距离，默认可以和 max-distance 一致
+      max-hit-distance: 16.0
+
+      # 目标离锚点超过这个距离则断开
+      break-distance: 12.0
+
+      bind:
+        # 目标可自由活动半径
+        radius: 2.5
+
+        # 超出半径后的回拉力度
+        pull-strength: 0.10
+
+        # 回拉速度上限
+        max-pull-speed: 0.35
+
+        # 速度阻尼，越小束缚感越强
+        velocity-damping: 0.8
+
+      damage:
+        enabled: true
+        amount: 2.0
+        interval-ticks: 20
+
+      particles:
+        enabled: true
+        interval-ticks: 1
+        particle: ELECTRIC_SPARK
+        count: 1
+        step: 0.35
+        max-points: 48
+
+      visual:
+        hook-display:
+          enabled: true
+          material: CHAIN
+          glowing: true
+          scale: 0.45
